@@ -161,6 +161,8 @@ module axi_ad9361 #(
   output  [63:0]  isdbt_sample_count,
   input   [31:0]  isdbt_fe_status,
   input   [31:0]  isdbt_fe_frames,
+  input   [31:0]  isdbt_sync_status,
+  input   [31:0]  isdbt_sync_peak,
   output          adc_r1_mode,
 
   output          dac_enable_i0,
@@ -362,6 +364,8 @@ module axi_ad9361 #(
     .d_win_decim (isdbt_win_decim),
     .d_fe_status (isdbt_fe_status),
     .d_fe_frames (isdbt_fe_frames),
+    .d_sync_status (isdbt_sync_status),
+    .d_sync_peak (isdbt_sync_peak),
     .up_rstn (up_rstn),
     .up_clk (up_clk),
     .up_wreq (up_wreq_s),

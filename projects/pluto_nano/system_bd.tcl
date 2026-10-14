@@ -369,6 +369,8 @@ ad_connect fe_corr/idx_out fe_sync/c_idx
 ad_connect axi_ad9361/adc_valid_i0 fe_sync/raw_valid
 ad_connect fe_sync/cfo_inc fe_out/info_a
 ad_connect fe_sync/status_word fe_out/info_b
+ad_connect fe_sync/dbg_word axi_ad9361/isdbt_sync_status
+ad_connect fe_sync/dbg_peak axi_ad9361/isdbt_sync_peak
 ad_connect fe_win/cfg_tdata fe_fft/s_axis_config_tdata
 ad_connect fe_win/cfg_tvalid fe_fft/s_axis_config_tvalid
 ad_connect fe_fft/s_axis_config_tready fe_win/cfg_tready
