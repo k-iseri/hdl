@@ -354,9 +354,9 @@ module axi_ad9361 #(
   if (ISDBT_COUNTER_ENABLE == 1) begin
   isdbt_regs #(
     .BASE_ADDR (14'h0C00),
-    .VERSION (32'd2),
+    .VERSION (32'd3),
     .PACK_SHIFT (ISDBT_PACK_SHIFT[7:0]),
-    .CAPS (32'h00000007)
+    .CAPS (32'h0000000F)
   ) i_isdbt_regs (
     .d_clk (clk),
     .d_rst (rst),
