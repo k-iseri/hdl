@@ -5,7 +5,6 @@
 
 # create board design
 source $ad_hdl_dir/projects/common/xilinx/adi_fir_filter_bd.tcl
-source $ad_hdl_dir/library/axi_tdd/scripts/axi_tdd.tcl
 
 # default ports
 
@@ -26,16 +25,7 @@ create_bd_port -dir I -from 17 -to 0 gpio_i
 create_bd_port -dir O -from 17 -to 0 gpio_o
 create_bd_port -dir O -from 17 -to 0 gpio_t
 
-create_bd_port -dir O spi_csn_o
-create_bd_port -dir I spi_csn_i
-create_bd_port -dir I spi_clk_i
-create_bd_port -dir O spi_clk_o
-create_bd_port -dir I spi_sdo_i
-create_bd_port -dir O spi_sdo_o
-create_bd_port -dir I spi_sdi_i
 
-create_bd_port -dir O txdata_o
-create_bd_port -dir I tdd_ext_sync
 
 # instance: sys_ps7
 
@@ -104,10 +94,6 @@ ad_ip_parameter sys_rstgen CONFIG.C_EXT_RST_WIDTH 1
 
 # add external spi
 
-ad_ip_instance axi_quad_spi axi_spi
-ad_ip_parameter axi_spi CONFIG.C_USE_STARTUP 0
-ad_ip_parameter axi_spi CONFIG.C_NUM_SS_BITS 1
-ad_ip_parameter axi_spi CONFIG.C_SCK_RATIO 8
 
 ad_connect  sys_cpu_clk sys_ps7/FCLK_CLK0
 ad_connect  sys_200m_clk sys_ps7/FCLK_CLK1
@@ -138,14 +124,6 @@ ad_connect  spi0_sdi_i sys_ps7/SPI0_MISO_I
 
 # axi spi connections
 
-ad_connect  sys_cpu_clk  axi_spi/ext_spi_clk
-ad_connect  spi_csn_i  axi_spi/ss_i
-ad_connect  spi_csn_o  axi_spi/ss_o
-ad_connect  spi_clk_i  axi_spi/sck_i
-ad_connect  spi_clk_o  axi_spi/sck_o
-ad_connect  spi_sdo_i  axi_spi/io0_i
-ad_connect  spi_sdo_o  axi_spi/io0_o
-ad_connect  spi_sdi_i  axi_spi/io1_i
 
 # interrupts
 
@@ -169,23 +147,8 @@ ad_connect  sys_concat_intc/In0 GND
 
 # iic
 
-# nano: I2C のピンは未同定なので IOBUF 付き inout ではなく i/o/t の個別ポートで出し、
-# system_top で内部的に終端する（ドライバが触っても PL 外には何も出ない）
-foreach p {scl sda} {
-  create_bd_port -dir I iic_${p}_i
-  create_bd_port -dir O iic_${p}_o
-  create_bd_port -dir O iic_${p}_t
-}
 
-ad_ip_instance axi_iic axi_iic_main
 
-foreach p {scl sda} {
-  ad_connect iic_${p}_i axi_iic_main/${p}_i
-  ad_connect iic_${p}_o axi_iic_main/${p}_o
-  ad_connect iic_${p}_t axi_iic_main/${p}_t
-}
-ad_cpu_interconnect 0x41600000 axi_iic_main
-ad_cpu_interrupt ps-15 mb-15 axi_iic_main/iic2intc_irpt
 
 # ad9361
 
@@ -258,11 +221,27 @@ if {[info exists ::env(ISDBT_RTL_DIR)]} {
   set isdbt_rtl_dir $ad_hdl_dir/../../rtl
 }
 add_files -norecurse $isdbt_rtl_dir/pack8.v
+# isdbt v2b-2c: iic/spi/tdd 削除、FFT 12bit（下の v2b の節を参照）
 # isdbt v2b: 前段オフロード（まずは FFT テストモード）。窓切り出し → Xilinx FFT 8192 → ヘッダ付き DMA 出力。
 # DMA の入力は dma_mux でモード 0（cpack = raw I/Q）とモード 1 以上（fe_out）を切り替える
 add_files -norecurse $isdbt_rtl_dir/isdbt_fe_win.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_fe_out.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_dma_mux.v
+# isdbt v2b-2: 同期（GI 相関 → 捕捉/追従 + CFO → CORDIC 逆回転）
+add_files -norecurse $isdbt_rtl_dir/isdbt_cordic.v
+add_files -norecurse $isdbt_rtl_dir/isdbt_gi_corr.v
+add_files -norecurse $isdbt_rtl_dir/isdbt_sync.v
+create_bd_cell -type module -reference isdbt_gi_corr fe_corr
+create_bd_cell -type module -reference isdbt_sync fe_sync
+create_bd_cell -type module -reference isdbt_rotate fe_rot
+ad_ip_instance xlslice fe_corr_idx
+ad_ip_parameter fe_corr_idx CONFIG.DIN_WIDTH 64
+ad_ip_parameter fe_corr_idx CONFIG.DIN_FROM 31
+ad_ip_parameter fe_corr_idx CONFIG.DIN_TO 0
+ad_connect axi_ad9361/isdbt_sample_count fe_corr_idx/Din
+ad_ip_instance xlconstant fe_margin
+ad_ip_parameter fe_margin CONFIG.CONST_WIDTH 16
+ad_ip_parameter fe_margin CONFIG.CONST_VAL 128
 create_bd_cell -type module -reference isdbt_fe_win fe_win
 create_bd_cell -type module -reference isdbt_fe_out fe_out
 create_bd_cell -type module -reference isdbt_dma_mux dma_mux
@@ -270,18 +249,14 @@ ad_ip_instance xfft fe_fft
 ad_ip_parameter fe_fft CONFIG.transform_length 8192
 ad_ip_parameter fe_fft CONFIG.implementation_options pipelined_streaming_io
 ad_ip_parameter fe_fft CONFIG.data_format fixed_point
-ad_ip_parameter fe_fft CONFIG.input_width 16
-ad_ip_parameter fe_fft CONFIG.phase_factor_width 16
+ad_ip_parameter fe_fft CONFIG.input_width 12
+ad_ip_parameter fe_fft CONFIG.phase_factor_width 12
 ad_ip_parameter fe_fft CONFIG.scaling_options block_floating_point
 ad_ip_parameter fe_fft CONFIG.rounding_modes convergent_rounding
 ad_ip_parameter fe_fft CONFIG.output_ordering natural_order
 ad_ip_parameter fe_fft CONFIG.throttle_scheme realtime
 ad_ip_parameter fe_fft CONFIG.xk_index true
 ad_ip_parameter fe_fft CONFIG.aresetn true
-ad_ip_instance xlslice fe_mode_bit0
-ad_ip_parameter fe_mode_bit0 CONFIG.DIN_WIDTH 4
-ad_ip_parameter fe_mode_bit0 CONFIG.DIN_FROM 0
-ad_ip_parameter fe_mode_bit0 CONFIG.DIN_TO 0
 ad_ip_instance xlconcat fe_status_cat
 ad_ip_parameter fe_status_cat CONFIG.NUM_PORTS 2
 ad_ip_parameter fe_status_cat CONFIG.IN0_WIDTH 16
@@ -347,17 +322,53 @@ ad_connect axi_ad9361/l_clk fe_out/clk
 ad_connect axi_ad9361/l_clk fe_fft/aclk
 ad_connect axi_ad9361/rst fe_win/rst
 ad_connect axi_ad9361/rst fe_out/rst
-ad_connect axi_ad9361/isdbt_mode fe_mode_bit0/Din
-ad_connect fe_mode_bit0/Dout fe_win/enable
-ad_connect fe_mode_bit0/Dout fe_out/enable
 ad_connect axi_ad9361/isdbt_mode fe_out/mode
+ad_connect axi_ad9361/isdbt_mode fe_win/mode
+ad_connect axi_ad9361/isdbt_mode fe_sync/mode
+ad_connect axi_ad9361/isdbt_mode fe_rot/mode
 ad_connect axi_ad9361/isdbt_win_stride fe_win/stride
 ad_connect axi_ad9361/isdbt_win_offset fe_win/offset
 ad_connect axi_ad9361/isdbt_win_decim fe_win/decim
-ad_connect axi_ad9361/isdbt_sample_count fe_win/sample_count
-ad_connect axi_ad9361/adc_valid_i0 fe_win/adc_valid
-ad_connect axi_ad9361/adc_data_i0 fe_win/adc_i
-ad_connect axi_ad9361/adc_data_q0 fe_win/adc_q
+# 生ストリーム → CORDIC 逆回転（NCO 位相は fe_sync）→ 窓エンジン。サンプル番号も同じ遅延で通す
+ad_connect axi_ad9361/l_clk fe_rot/clk
+ad_connect axi_ad9361/adc_valid_i0 fe_rot/valid_in
+ad_connect axi_ad9361/adc_data_i0 fe_rot/x_in
+ad_connect axi_ad9361/adc_data_q0 fe_rot/y_in
+ad_connect fe_sync/nco_phase fe_rot/phase_in
+ad_connect fe_corr_idx/Dout fe_rot/idx_in
+ad_connect fe_rot/valid_out fe_win/adc_valid
+ad_connect fe_rot/x_out fe_win/adc_i
+ad_connect fe_rot/y_out fe_win/adc_q
+ad_ip_instance xlconcat fe_idx_cat
+ad_ip_parameter fe_idx_cat CONFIG.NUM_PORTS 2
+ad_ip_parameter fe_idx_cat CONFIG.IN0_WIDTH 32
+ad_ip_parameter fe_idx_cat CONFIG.IN1_WIDTH 32
+ad_ip_instance xlconstant fe_zero32
+ad_ip_parameter fe_zero32 CONFIG.CONST_WIDTH 32
+ad_ip_parameter fe_zero32 CONFIG.CONST_VAL 0
+ad_connect fe_rot/idx_out fe_idx_cat/In0
+ad_connect fe_zero32/dout fe_idx_cat/In1
+ad_connect fe_idx_cat/dout fe_win/sample_count
+ad_connect fe_sync/start_valid fe_win/start_valid
+ad_connect fe_sync/start_pos fe_win/start_pos
+# GI 相関（8bit = pack8 出力）→ 同期
+ad_connect axi_ad9361/l_clk fe_corr/clk
+ad_connect axi_ad9361/rst fe_corr/rst
+ad_connect axi_ad9361/adc_valid_i0 fe_corr/valid_in
+ad_connect pack8_0/dout fe_corr/i_in
+ad_connect pack8_1/dout fe_corr/q_in
+ad_connect fe_corr_idx/Dout fe_corr/idx_in
+ad_connect axi_ad9361/l_clk fe_sync/clk
+ad_connect axi_ad9361/rst fe_sync/rst
+ad_connect fe_margin/dout fe_sync/margin
+ad_connect fe_corr/valid_out fe_sync/c_valid
+ad_connect fe_corr/c_re fe_sync/c_re
+ad_connect fe_corr/c_im fe_sync/c_im
+ad_connect fe_corr/mag2 fe_sync/c_mag2
+ad_connect fe_corr/idx_out fe_sync/c_idx
+ad_connect axi_ad9361/adc_valid_i0 fe_sync/raw_valid
+ad_connect fe_sync/cfo_inc fe_out/info_a
+ad_connect fe_sync/status_word fe_out/info_b
 ad_connect fe_win/cfg_tdata fe_fft/s_axis_config_tdata
 ad_connect fe_win/cfg_tvalid fe_fft/s_axis_config_tvalid
 ad_connect fe_fft/s_axis_config_tready fe_win/cfg_tready
@@ -405,43 +416,22 @@ ad_connect  axi_ad9361/l_clk axi_ad9361_dac_dma/m_axis_aclk
 ad_connect  cpack/fifo_wr_overflow axi_ad9361/adc_dovf
 
 # External TDD
-set TDD_CHANNEL_CNT 3
-set TDD_DEFAULT_POL 0b110
-set TDD_REG_WIDTH 32
-set TDD_BURST_WIDTH 32
-set TDD_SYNC_WIDTH 0
-set TDD_SYNC_INT 0
-set TDD_SYNC_EXT 1
-set TDD_SYNC_EXT_CDC 1
-ad_tdd_gen_create axi_tdd_0 $TDD_CHANNEL_CNT \
-                            $TDD_DEFAULT_POL \
-                            $TDD_REG_WIDTH \
-                            $TDD_BURST_WIDTH \
-                            $TDD_SYNC_WIDTH \
-                            $TDD_SYNC_INT \
-                            $TDD_SYNC_EXT \
-                            $TDD_SYNC_EXT_CDC
 
 ad_ip_instance util_vector_logic logic_inv [list \
   C_OPERATION {not} \
   C_SIZE 1]
 
 ad_connect logic_inv/Op1  axi_ad9361/rst
-ad_connect logic_inv/Res  axi_tdd_0/resetn
 ad_connect logic_inv/Res  fe_fft/aresetn
-ad_connect axi_ad9361/l_clk axi_tdd_0/clk
-ad_connect axi_tdd_0/sync_in tdd_ext_sync
-ad_connect axi_tdd_0/tdd_channel_0 txdata_o
-ad_connect axi_tdd_0/tdd_channel_1 axi_ad9361_adc_dma/sync
-ad_connect axi_tdd_0/tdd_channel_2 axi_ad9361_dac_dma/sync
+# isdbt v2b-2c: TDD コアを外したので DMA の sync は常時 1
+ad_connect VCC axi_ad9361_adc_dma/sync
+ad_connect VCC axi_ad9361_dac_dma/sync
 
 # interconnects
 
 ad_cpu_interconnect 0x79020000 axi_ad9361
 ad_cpu_interconnect 0x7C400000 axi_ad9361_adc_dma
 ad_cpu_interconnect 0x7C420000 axi_ad9361_dac_dma
-ad_cpu_interconnect 0x7C430000 axi_spi
-ad_cpu_interconnect 0x7C440000 axi_tdd_0
 
 ad_ip_parameter sys_ps7 CONFIG.PCW_USE_S_AXI_HP1 {1}
 ad_connect sys_cpu_clk sys_ps7/S_AXI_HP1_ACLK
@@ -470,5 +460,4 @@ ad_connect sys_cpu_resetn axi_ad9361_dac_dma/m_src_axi_aresetn
 
 ad_cpu_interrupt ps-13 mb-13 axi_ad9361_adc_dma/irq
 ad_cpu_interrupt ps-12 mb-12 axi_ad9361_dac_dma/irq
-ad_cpu_interrupt ps-11 mb-11 axi_spi/ip2intc_irpt
 
