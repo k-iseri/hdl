@@ -45,7 +45,9 @@ module axi_ad9361_rx_channel #(
   parameter   USERPORTS_DISABLE = 0,
   parameter   DATAFORMAT_DISABLE = 0,
   parameter   DCFILTER_DISABLE = 0,
-  parameter   IQCORRECTION_DISABLE = 0
+  parameter   IQCORRECTION_DISABLE = 0,
+  parameter   USR_DATATYPE_TOTAL_BITS = 16,
+  parameter   USR_DATATYPE_BITS = 16
 ) (
 
   // adc interface
@@ -220,8 +222,8 @@ module axi_ad9361_rx_channel #(
     .adc_usr_datatype_be (1'b0),
     .adc_usr_datatype_signed (1'b1),
     .adc_usr_datatype_shift (8'd0),
-    .adc_usr_datatype_total_bits (8'd16),
-    .adc_usr_datatype_bits (8'd16),
+    .adc_usr_datatype_total_bits (USR_DATATYPE_TOTAL_BITS[7:0]),
+    .adc_usr_datatype_bits (USR_DATATYPE_BITS[7:0]),
     .adc_usr_decimation_m (16'd1),
     .adc_usr_decimation_n (16'd1),
     .up_rstn (up_rstn),

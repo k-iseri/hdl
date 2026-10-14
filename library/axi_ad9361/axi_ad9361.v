@@ -70,7 +70,14 @@ module axi_ad9361 #(
   parameter   MIMO_ENABLE = 0,
   parameter   USE_SSI_CLK = 1,
   parameter   DELAY_REFCLK_FREQUENCY = 200,
-  parameter   RX_NODPA = 0
+  parameter   RX_NODPA = 0,
+  // isdbt: ADC チャネルが CHAN_USR_CNTRL_1 で申告するデータ型（ストリームの実際の幅。
+  // 8bit パッキング時は 8/8 にしてカーネルに知らせる）
+  parameter   USR_DATATYPE_TOTAL_BITS = 16,
+  parameter   USR_DATATYPE_BITS = 16,
+  // isdbt: サンプルカウンタ / overflow 回数のレジスタブロック（ワード 0x0C00 = バイト 0x3000）
+  parameter   ISDBT_COUNTER_ENABLE = 0,
+  parameter   ISDBT_PACK_SHIFT = 4          // FORMAT レジスタで申告する pack8 のシフト量
 ) (
 
   // physical interface (receive-lvds)
@@ -280,6 +287,9 @@ module axi_ad9361 #(
   wire            up_wack_tdd_s;
   wire            up_rack_tdd_s;
   wire    [31:0]  up_rdata_tdd_s;
+  wire            up_wack_cnt_s;
+  wire            up_rack_cnt_s;
+  wire    [31:0]  up_rdata_cnt_s;
   wire            tdd_enable_s;
   wire            tdd_txnrx_s;
   wire            tdd_mode_s;
@@ -317,11 +327,41 @@ module axi_ad9361 #(
       up_rack <= 'd0;
       up_rdata <= 'd0;
     end else begin
-      up_wack <= up_wack_rx_s | up_wack_tx_s | up_wack_tdd_s;
-      up_rack <= up_rack_rx_s | up_rack_tx_s | up_rack_tdd_s;
-      up_rdata <= up_rdata_rx_s | up_rdata_tx_s | up_rdata_tdd_s;
+      up_wack <= up_wack_rx_s | up_wack_tx_s | up_wack_tdd_s | up_wack_cnt_s;
+      up_rack <= up_rack_rx_s | up_rack_tx_s | up_rack_tdd_s | up_rack_cnt_s;
+      up_rdata <= up_rdata_rx_s | up_rdata_tx_s | up_rdata_tdd_s | up_rdata_cnt_s;
     end
   end
+
+  // isdbt: sample counter block
+
+  generate
+  if (ISDBT_COUNTER_ENABLE == 1) begin
+  isdbt_sample_counter #(
+    .BASE_ADDR (14'h0C00),
+    .VERSION (32'd1),
+    .PACK_SHIFT (ISDBT_PACK_SHIFT[7:0])
+  ) i_isdbt_sample_counter (
+    .d_clk (clk),
+    .d_rst (rst),
+    .d_valid (adc_valid_i0),
+    .d_ovf (adc_dovf),
+    .up_rstn (up_rstn),
+    .up_clk (up_clk),
+    .up_wreq (up_wreq_s),
+    .up_waddr (up_waddr_s),
+    .up_wdata (up_wdata_s),
+    .up_wack (up_wack_cnt_s),
+    .up_rreq (up_rreq_s),
+    .up_raddr (up_raddr_s),
+    .up_rdata (up_rdata_cnt_s),
+    .up_rack (up_rack_cnt_s));
+  end else begin
+  assign up_wack_cnt_s = 1'b0;
+  assign up_rack_cnt_s = 1'b0;
+  assign up_rdata_cnt_s = 32'd0;
+  end
+  endgenerate
 
   // device interface
 
@@ -593,6 +633,8 @@ module axi_ad9361 #(
 
   axi_ad9361_rx #(
     .ID (ID),
+    .USR_DATATYPE_TOTAL_BITS (USR_DATATYPE_TOTAL_BITS),
+    .USR_DATATYPE_BITS (USR_DATATYPE_BITS),
     .FPGA_TECHNOLOGY (FPGA_TECHNOLOGY),
     .FPGA_FAMILY (FPGA_FAMILY),
     .SPEED_GRADE (SPEED_GRADE),

@@ -209,6 +209,16 @@ ad_ip_parameter axi_ad9361 CONFIG.ID 0
 ad_ip_parameter axi_ad9361 CONFIG.CMOS_OR_LVDS_N 1
 ad_ip_parameter axi_ad9361 CONFIG.MODE_1R1T 0
 ad_ip_parameter axi_ad9361 CONFIG.ADC_INIT_DELAY 21
+# isdbt v1: ストリームは 8bit/サンプル（pack8 + cpack 8bit）。コアにそう申告させ、
+# カーネル（cf_axi_adc の isdbt パッチ）が scan_elements を le:s8/8 にする
+ad_ip_parameter axi_ad9361 CONFIG.USR_DATATYPE_TOTAL_BITS 8
+ad_ip_parameter axi_ad9361 CONFIG.USR_DATATYPE_BITS 8
+# isdbt v1: サンプルカウンタ（バイト 0x3000、MAGIC 0x49534442）
+ad_ip_parameter axi_ad9361 CONFIG.ISDBT_COUNTER_ENABLE 1
+# pack8 のシフト量。3 = +6 dB の前置ゲイン（8bit 量子化雑音を下げる。ADC −6 dBFS 以上で飽和するが、
+# ソフト AGC の目標 −24 dBFS に対し OFDM のピーク（+12 dB）でも −12 dBFS なので余裕がある）
+set isdbt_pack_shift 3
+ad_ip_parameter axi_ad9361 CONFIG.ISDBT_PACK_SHIFT $isdbt_pack_shift
 
 ad_ip_instance axi_dmac axi_ad9361_dac_dma
 ad_ip_parameter axi_ad9361_dac_dma CONFIG.DMA_TYPE_SRC 0
@@ -233,12 +243,26 @@ ad_ip_parameter axi_ad9361_adc_dma CONFIG.SYNC_TRANSFER_START 1
 ad_ip_parameter axi_ad9361_adc_dma CONFIG.AXI_SLICE_SRC 0
 ad_ip_parameter axi_ad9361_adc_dma CONFIG.AXI_SLICE_DEST 0
 ad_ip_parameter axi_ad9361_adc_dma CONFIG.DMA_2D_TRANSFER 0
-ad_ip_parameter axi_ad9361_adc_dma CONFIG.DMA_DATA_WIDTH_SRC 64
+ad_ip_parameter axi_ad9361_adc_dma CONFIG.DMA_DATA_WIDTH_SRC 32
 
 ad_add_decimation_filter "rx_fir_decimator" 8 2 1 {61.44} {61.44} \
                          "$ad_hdl_dir/library/util_fir_int/coefile_int.coe"
 ad_ip_instance xlslice decim_slice
 ad_ip_instance util_cpack2 cpack
+ad_ip_parameter cpack CONFIG.SAMPLE_DATA_WIDTH 8
+
+# isdbt v1: 16bit コンテナの 12bit サンプルを 8bit に量子化する pack8（MIT、pluto-fw-isdbt/rtl）。
+# 置き場所は環境変数 ISDBT_RTL_DIR、既定は hdl/../../rtl（pluto-fw-isdbt の submodule 配置）
+if {[info exists ::env(ISDBT_RTL_DIR)]} {
+  set isdbt_rtl_dir $::env(ISDBT_RTL_DIR)
+} else {
+  set isdbt_rtl_dir $ad_hdl_dir/../../rtl
+}
+add_files -norecurse $isdbt_rtl_dir/pack8.v
+foreach lane {0 1 2 3} {
+  create_bd_cell -type module -reference pack8 pack8_$lane
+  set_property CONFIG.SHIFT $isdbt_pack_shift [get_bd_cells pack8_$lane]
+}
 
 # connections
 
@@ -270,14 +294,18 @@ ad_connect axi_ad9361/l_clk cpack/clk
 ad_connect axi_ad9361/rst cpack/reset
 
 ad_connect axi_ad9361/adc_enable_i1 cpack/enable_2
-ad_connect axi_ad9361/adc_data_i1 cpack/fifo_wr_data_2
+ad_connect axi_ad9361/adc_data_i1 pack8_2/din
+ad_connect pack8_2/dout cpack/fifo_wr_data_2
 ad_connect axi_ad9361/adc_enable_q1 cpack/enable_3
-ad_connect axi_ad9361/adc_data_q1 cpack/fifo_wr_data_3
+ad_connect axi_ad9361/adc_data_q1 pack8_3/din
+ad_connect pack8_3/dout cpack/fifo_wr_data_3
 
 ad_connect cpack/enable_0 rx_fir_decimator/enable_out_0
 ad_connect cpack/enable_1 rx_fir_decimator/enable_out_1
-ad_connect cpack/fifo_wr_data_0 rx_fir_decimator/data_out_0
-ad_connect cpack/fifo_wr_data_1 rx_fir_decimator/data_out_1
+ad_connect rx_fir_decimator/data_out_0 pack8_0/din
+ad_connect pack8_0/dout cpack/fifo_wr_data_0
+ad_connect rx_fir_decimator/data_out_1 pack8_1/din
+ad_connect pack8_1/dout cpack/fifo_wr_data_1
 ad_connect rx_fir_decimator/valid_out_0 cpack/fifo_wr_en
 
 ad_connect axi_ad9361_adc_dma/fifo_wr cpack/packed_fifo_wr
