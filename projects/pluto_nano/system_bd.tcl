@@ -227,14 +227,15 @@ add_files -norecurse $isdbt_rtl_dir/pack8.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_fe_win.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_fe_out.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_dma_mux.v
-# isdbt v2b-2: 同期（GI 相関 → 捕捉/追従 + CFO → CORDIC 逆回転）
-add_files -norecurse $isdbt_rtl_dir/isdbt_cordic.v
-add_files -norecurse $isdbt_rtl_dir/isdbt_gi_corr.v
-add_files -norecurse $isdbt_rtl_dir/isdbt_sync.v
 # isdbt v2b-3b: 等化器（モード 4）。表は isdbt_eq_tables.vh（include）
 add_files -norecurse $isdbt_rtl_dir/isdbt_eq_tables.vh
 set_property file_type {Verilog Header} [get_files isdbt_eq_tables.vh]
 set_property include_dirs $isdbt_rtl_dir [get_filesets sources_1]
+# isdbt v2b-2: 同期（GI 相関 → 捕捉/追従 + CFO → CORDIC 逆回転）
+add_files -norecurse $isdbt_rtl_dir/isdbt_cordic.v
+add_files -norecurse $isdbt_rtl_dir/isdbt_cordic_seq.v
+add_files -norecurse $isdbt_rtl_dir/isdbt_gi_corr.v
+add_files -norecurse $isdbt_rtl_dir/isdbt_sync.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_eq.v
 create_bd_cell -type module -reference isdbt_eq fe_eq
 ad_ip_instance xlslice fe_hdr_start_lo
@@ -251,7 +252,7 @@ ad_ip_parameter fe_eq_flags CONFIG.DIN_FROM 15
 ad_ip_parameter fe_eq_flags CONFIG.DIN_TO 8
 create_bd_cell -type module -reference isdbt_gi_corr fe_corr
 create_bd_cell -type module -reference isdbt_sync fe_sync
-create_bd_cell -type module -reference isdbt_rotate fe_rot
+create_bd_cell -type module -reference isdbt_rotate_lut fe_rot
 ad_ip_instance xlslice fe_corr_idx
 ad_ip_parameter fe_corr_idx CONFIG.DIN_WIDTH 64
 ad_ip_parameter fe_corr_idx CONFIG.DIN_FROM 31
