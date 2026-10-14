@@ -167,6 +167,7 @@ module axi_ad9361 #(
   input   [31:0]  isdbt_eq_omega,
   input   [31:0]  isdbt_tim_est,
   input   [31:0]  isdbt_tim_delta,
+  input   [31:0]  isdbt_adc_level,
   output  [15:0]  isdbt_eq_ctrl,
   output          adc_r1_mode,
 
@@ -354,9 +355,9 @@ module axi_ad9361 #(
   if (ISDBT_COUNTER_ENABLE == 1) begin
   isdbt_regs #(
     .BASE_ADDR (14'h0C00),
-    .VERSION (32'd3),
+    .VERSION (32'd4),
     .PACK_SHIFT (ISDBT_PACK_SHIFT[7:0]),
-    .CAPS (32'h0000000F)
+    .CAPS (32'h0000001F)
   ) i_isdbt_regs (
     .d_clk (clk),
     .d_rst (rst),
@@ -375,6 +376,7 @@ module axi_ad9361 #(
     .d_eq_omega (isdbt_eq_omega),
     .d_tim_est (isdbt_tim_est),
     .d_tim_delta (isdbt_tim_delta),
+    .d_adc_level (isdbt_adc_level),
     .d_eq_ctrl (isdbt_eq_ctrl),
     .up_rstn (up_rstn),
     .up_clk (up_clk),

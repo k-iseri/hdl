@@ -237,6 +237,7 @@ add_files -norecurse $isdbt_rtl_dir/isdbt_cordic_seq.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_gi_corr.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_sync.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_eq.v
+add_files -norecurse $isdbt_rtl_dir/isdbt_level.v
 create_bd_cell -type module -reference isdbt_eq fe_eq
 ad_ip_instance xlslice fe_hdr_start_lo
 ad_ip_parameter fe_hdr_start_lo CONFIG.DIN_WIDTH 64
@@ -379,6 +380,15 @@ ad_connect axi_ad9361/rst fe_corr/rst
 ad_connect axi_ad9361/adc_valid_i0 fe_corr/valid_in
 ad_connect pack8_0/dout fe_corr/i_in
 ad_connect pack8_1/dout fe_corr/q_in
+
+# ADC レベル計（isdbt v2b-3c: モード 3/4 中のソフト AGC 用。pack8 後の 8bit I/Q の I²+Q² を 65536 サンプル積算）
+create_bd_cell -type module -reference isdbt_level fe_level
+ad_connect axi_ad9361/l_clk fe_level/clk
+ad_connect axi_ad9361/rst fe_level/rst
+ad_connect axi_ad9361/adc_valid_i0 fe_level/valid
+ad_connect pack8_0/dout fe_level/i_in
+ad_connect pack8_1/dout fe_level/q_in
+ad_connect fe_level/level axi_ad9361/isdbt_adc_level
 ad_connect fe_corr_idx/Dout fe_corr/idx_in
 ad_connect axi_ad9361/l_clk fe_sync/clk
 ad_connect axi_ad9361/rst fe_sync/rst
