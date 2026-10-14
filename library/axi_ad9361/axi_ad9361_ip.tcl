@@ -37,7 +37,7 @@ adi_ip_files axi_ad9361 [list \
   "$ad_hdl_dir/library/common/up_dac_common.v" \
   "$ad_hdl_dir/library/common/up_dac_channel.v" \
   "$ad_hdl_dir/library/common/up_tdd_cntrl.v" \
-  "$ad_hdl_dir/library/axi_ad9361/isdbt_sample_counter.v" \
+  "$ad_hdl_dir/library/axi_ad9361/isdbt_regs.v" \
   "$ad_hdl_dir/library/xilinx/common/up_xfer_cntrl_constr.xdc" \
   "$ad_hdl_dir/library/common/ad_pps_receiver_constr.ttcl" \
   "$ad_hdl_dir/library/xilinx/common/ad_rst_constr.xdc" \

@@ -153,6 +153,14 @@ module axi_ad9361 #(
   output          adc_valid_q1,
   output  [15:0]  adc_data_q1,
   input           adc_dovf,
+  // isdbt: 前段オフロードの制御（l_clk ドメイン）と状態
+  output  [ 3:0]  isdbt_mode,
+  output  [15:0]  isdbt_win_stride,
+  output  [15:0]  isdbt_win_offset,
+  output  [ 7:0]  isdbt_win_decim,
+  output  [63:0]  isdbt_sample_count,
+  input   [31:0]  isdbt_fe_status,
+  input   [31:0]  isdbt_fe_frames,
   output          adc_r1_mode,
 
   output          dac_enable_i0,
@@ -337,15 +345,23 @@ module axi_ad9361 #(
 
   generate
   if (ISDBT_COUNTER_ENABLE == 1) begin
-  isdbt_sample_counter #(
+  isdbt_regs #(
     .BASE_ADDR (14'h0C00),
-    .VERSION (32'd1),
-    .PACK_SHIFT (ISDBT_PACK_SHIFT[7:0])
-  ) i_isdbt_sample_counter (
+    .VERSION (32'd2),
+    .PACK_SHIFT (ISDBT_PACK_SHIFT[7:0]),
+    .CAPS (32'h00000007)
+  ) i_isdbt_regs (
     .d_clk (clk),
     .d_rst (rst),
     .d_valid (adc_valid_i0),
     .d_ovf (adc_dovf),
+    .d_sample_count (isdbt_sample_count),
+    .d_mode (isdbt_mode),
+    .d_win_stride (isdbt_win_stride),
+    .d_win_offset (isdbt_win_offset),
+    .d_win_decim (isdbt_win_decim),
+    .d_fe_status (isdbt_fe_status),
+    .d_fe_frames (isdbt_fe_frames),
     .up_rstn (up_rstn),
     .up_clk (up_clk),
     .up_wreq (up_wreq_s),
@@ -360,6 +376,11 @@ module axi_ad9361 #(
   assign up_wack_cnt_s = 1'b0;
   assign up_rack_cnt_s = 1'b0;
   assign up_rdata_cnt_s = 32'd0;
+  assign isdbt_sample_count = 64'd0;
+  assign isdbt_mode = 4'd0;
+  assign isdbt_win_stride = 16'd0;
+  assign isdbt_win_offset = 16'd0;
+  assign isdbt_win_decim = 8'd0;
   end
   endgenerate
 

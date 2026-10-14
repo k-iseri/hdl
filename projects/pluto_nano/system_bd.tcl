@@ -258,6 +258,35 @@ if {[info exists ::env(ISDBT_RTL_DIR)]} {
   set isdbt_rtl_dir $ad_hdl_dir/../../rtl
 }
 add_files -norecurse $isdbt_rtl_dir/pack8.v
+# isdbt v2b: 前段オフロード（まずは FFT テストモード）。窓切り出し → Xilinx FFT 8192 → ヘッダ付き DMA 出力。
+# DMA の入力は dma_mux でモード 0（cpack = raw I/Q）とモード 1 以上（fe_out）を切り替える
+add_files -norecurse $isdbt_rtl_dir/isdbt_fe_win.v
+add_files -norecurse $isdbt_rtl_dir/isdbt_fe_out.v
+add_files -norecurse $isdbt_rtl_dir/isdbt_dma_mux.v
+create_bd_cell -type module -reference isdbt_fe_win fe_win
+create_bd_cell -type module -reference isdbt_fe_out fe_out
+create_bd_cell -type module -reference isdbt_dma_mux dma_mux
+ad_ip_instance xfft fe_fft
+ad_ip_parameter fe_fft CONFIG.transform_length 8192
+ad_ip_parameter fe_fft CONFIG.implementation_options pipelined_streaming_io
+ad_ip_parameter fe_fft CONFIG.data_format fixed_point
+ad_ip_parameter fe_fft CONFIG.input_width 16
+ad_ip_parameter fe_fft CONFIG.phase_factor_width 16
+ad_ip_parameter fe_fft CONFIG.scaling_options block_floating_point
+ad_ip_parameter fe_fft CONFIG.rounding_modes convergent_rounding
+ad_ip_parameter fe_fft CONFIG.output_ordering natural_order
+ad_ip_parameter fe_fft CONFIG.throttle_scheme realtime
+ad_ip_parameter fe_fft CONFIG.xk_index true
+ad_ip_parameter fe_fft CONFIG.aresetn true
+ad_ip_instance xlslice fe_mode_bit0
+ad_ip_parameter fe_mode_bit0 CONFIG.DIN_WIDTH 4
+ad_ip_parameter fe_mode_bit0 CONFIG.DIN_FROM 0
+ad_ip_parameter fe_mode_bit0 CONFIG.DIN_TO 0
+ad_ip_instance xlconcat fe_status_cat
+ad_ip_parameter fe_status_cat CONFIG.NUM_PORTS 2
+ad_ip_parameter fe_status_cat CONFIG.IN0_WIDTH 16
+ad_ip_parameter fe_status_cat CONFIG.IN1_WIDTH 16
+
 foreach lane {0 1 2 3} {
   create_bd_cell -type module -reference pack8 pack8_$lane
   set_property CONFIG.SHIFT $isdbt_pack_shift [get_bd_cells pack8_$lane]
@@ -300,7 +329,54 @@ ad_connect axi_ad9361/adc_data_q0 pack8_1/din
 ad_connect pack8_1/dout cpack/fifo_wr_data_1
 ad_connect axi_ad9361/adc_valid_i0 cpack/fifo_wr_en
 
-ad_connect axi_ad9361_adc_dma/fifo_wr cpack/packed_fifo_wr
+# isdbt v2b: cpack → dma_mux → DMA
+ad_connect cpack/packed_fifo_wr_en dma_mux/a_wr_en
+ad_connect cpack/packed_fifo_wr_data dma_mux/a_wr_data
+ad_connect cpack/packed_sync dma_mux/a_sync
+ad_connect dma_mux/a_overflow cpack/packed_fifo_wr_overflow
+ad_connect dma_mux/fifo_wr_en axi_ad9361_adc_dma/fifo_wr_en
+ad_connect dma_mux/fifo_wr_din axi_ad9361_adc_dma/fifo_wr_din
+ad_connect axi_ad9361_adc_dma/fifo_wr_overflow dma_mux/fifo_wr_overflow
+ad_connect axi_ad9361/isdbt_mode dma_mux/mode
+ad_connect fe_out/dma_wr_en dma_mux/b_wr_en
+ad_connect fe_out/dma_wr_data dma_mux/b_wr_data
+
+# isdbt v2b: 前段の配線（l_clk ドメイン）
+ad_connect axi_ad9361/l_clk fe_win/clk
+ad_connect axi_ad9361/l_clk fe_out/clk
+ad_connect axi_ad9361/l_clk fe_fft/aclk
+ad_connect axi_ad9361/rst fe_win/rst
+ad_connect axi_ad9361/rst fe_out/rst
+ad_connect axi_ad9361/isdbt_mode fe_mode_bit0/Din
+ad_connect fe_mode_bit0/Dout fe_win/enable
+ad_connect fe_mode_bit0/Dout fe_out/enable
+ad_connect axi_ad9361/isdbt_mode fe_out/mode
+ad_connect axi_ad9361/isdbt_win_stride fe_win/stride
+ad_connect axi_ad9361/isdbt_win_offset fe_win/offset
+ad_connect axi_ad9361/isdbt_win_decim fe_win/decim
+ad_connect axi_ad9361/isdbt_sample_count fe_win/sample_count
+ad_connect axi_ad9361/adc_valid_i0 fe_win/adc_valid
+ad_connect axi_ad9361/adc_data_i0 fe_win/adc_i
+ad_connect axi_ad9361/adc_data_q0 fe_win/adc_q
+ad_connect fe_win/cfg_tdata fe_fft/s_axis_config_tdata
+ad_connect fe_win/cfg_tvalid fe_fft/s_axis_config_tvalid
+ad_connect fe_fft/s_axis_config_tready fe_win/cfg_tready
+ad_connect fe_win/s_tdata fe_fft/s_axis_data_tdata
+ad_connect fe_win/s_tvalid fe_fft/s_axis_data_tvalid
+ad_connect fe_win/s_tlast fe_fft/s_axis_data_tlast
+ad_connect fe_fft/s_axis_data_tready fe_win/s_tready
+ad_connect fe_fft/m_axis_data_tdata fe_out/m_tdata
+ad_connect fe_fft/m_axis_data_tuser fe_out/m_tuser
+ad_connect fe_fft/m_axis_data_tvalid fe_out/m_tvalid
+ad_connect fe_fft/m_axis_data_tlast fe_out/m_tlast
+ad_connect fe_win/hdr_start fe_out/hdr_start
+ad_connect fe_win/hdr_seq fe_out/hdr_seq
+ad_connect fe_win/hdr_valid fe_out/hdr_valid
+ad_connect fe_out/hdr_pop fe_win/hdr_pop
+ad_connect fe_win/overrun_count fe_status_cat/In0
+ad_connect fe_out/fifo_overflow_count fe_status_cat/In1
+ad_connect fe_status_cat/dout axi_ad9361/isdbt_fe_status
+ad_connect fe_out/frames_out axi_ad9361/isdbt_fe_frames
 
 
 
@@ -352,6 +428,7 @@ ad_ip_instance util_vector_logic logic_inv [list \
 
 ad_connect logic_inv/Op1  axi_ad9361/rst
 ad_connect logic_inv/Res  axi_tdd_0/resetn
+ad_connect logic_inv/Res  fe_fft/aresetn
 ad_connect axi_ad9361/l_clk axi_tdd_0/clk
 ad_connect axi_tdd_0/sync_in tdd_ext_sync
 ad_connect axi_tdd_0/tdd_channel_0 txdata_o
