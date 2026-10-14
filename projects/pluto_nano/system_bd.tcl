@@ -231,6 +231,24 @@ add_files -norecurse $isdbt_rtl_dir/isdbt_dma_mux.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_cordic.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_gi_corr.v
 add_files -norecurse $isdbt_rtl_dir/isdbt_sync.v
+# isdbt v2b-3b: 等化器（モード 4）。表は isdbt_eq_tables.vh（include）
+add_files -norecurse $isdbt_rtl_dir/isdbt_eq_tables.vh
+set_property file_type {Verilog Header} [get_files isdbt_eq_tables.vh]
+set_property include_dirs $isdbt_rtl_dir [get_filesets sources_1]
+add_files -norecurse $isdbt_rtl_dir/isdbt_eq.v
+create_bd_cell -type module -reference isdbt_eq fe_eq
+ad_ip_instance xlslice fe_hdr_start_lo
+ad_ip_parameter fe_hdr_start_lo CONFIG.DIN_WIDTH 64
+ad_ip_parameter fe_hdr_start_lo CONFIG.DIN_FROM 31
+ad_ip_parameter fe_hdr_start_lo CONFIG.DIN_TO 0
+ad_ip_instance xlslice fe_eq_cfo
+ad_ip_parameter fe_eq_cfo CONFIG.DIN_WIDTH 16
+ad_ip_parameter fe_eq_cfo CONFIG.DIN_FROM 7
+ad_ip_parameter fe_eq_cfo CONFIG.DIN_TO 0
+ad_ip_instance xlslice fe_eq_flags
+ad_ip_parameter fe_eq_flags CONFIG.DIN_WIDTH 16
+ad_ip_parameter fe_eq_flags CONFIG.DIN_FROM 15
+ad_ip_parameter fe_eq_flags CONFIG.DIN_TO 8
 create_bd_cell -type module -reference isdbt_gi_corr fe_corr
 create_bd_cell -type module -reference isdbt_sync fe_sync
 create_bd_cell -type module -reference isdbt_rotate fe_rot
@@ -351,6 +369,9 @@ ad_connect fe_zero32/dout fe_idx_cat/In1
 ad_connect fe_idx_cat/dout fe_win/sample_count
 ad_connect fe_sync/start_valid fe_win/start_valid
 ad_connect fe_sync/start_pos fe_win/start_pos
+ad_connect fe_sync/tim_delta fe_win/start_delta
+ad_connect fe_sync/tim_delta axi_ad9361/isdbt_tim_delta
+ad_connect fe_sync/tim_est axi_ad9361/isdbt_tim_est
 # GI 相関（8bit = pack8 出力）→ 同期
 ad_connect axi_ad9361/l_clk fe_corr/clk
 ad_connect axi_ad9361/rst fe_corr/rst
@@ -390,6 +411,28 @@ ad_connect fe_win/overrun_count fe_status_cat/In0
 ad_connect fe_out/fifo_overflow_count fe_status_cat/In1
 ad_connect fe_status_cat/dout axi_ad9361/isdbt_fe_status
 ad_connect fe_out/frames_out axi_ad9361/isdbt_fe_frames
+# 等化器
+ad_connect axi_ad9361/l_clk fe_eq/clk
+ad_connect axi_ad9361/rst fe_eq/rst
+ad_connect axi_ad9361/isdbt_mode fe_eq/mode
+ad_connect axi_ad9361/isdbt_eq_ctrl fe_eq_cfo/Din
+ad_connect axi_ad9361/isdbt_eq_ctrl fe_eq_flags/Din
+ad_connect fe_eq_cfo/Dout fe_eq/int_cfo
+ad_connect fe_eq_flags/Dout fe_eq/eq_flags
+ad_connect fe_fft/m_axis_data_tdata fe_eq/m_tdata
+ad_connect fe_fft/m_axis_data_tuser fe_eq/m_tuser
+ad_connect fe_fft/m_axis_data_tvalid fe_eq/m_tvalid
+ad_connect fe_fft/m_axis_data_tlast fe_eq/m_tlast
+ad_connect fe_win/hdr_start fe_hdr_start_lo/Din
+ad_connect fe_hdr_start_lo/Dout fe_eq/hdr_start
+ad_connect fe_win/hdr_delta fe_eq/hdr_delta
+ad_connect fe_win/hdr_delta fe_out/hdr_delta
+ad_connect fe_eq/o_valid fe_out/eq_valid
+ad_connect fe_out/eq_ready fe_eq/o_ready
+ad_connect fe_eq/o_data fe_out/eq_data
+ad_connect fe_eq/o_last fe_out/eq_last
+ad_connect fe_eq/dbg_word axi_ad9361/isdbt_eq_status
+ad_connect fe_eq/afc_omega axi_ad9361/isdbt_eq_omega
 
 
 
