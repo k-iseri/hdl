@@ -463,12 +463,8 @@ ad_connect  cpack/fifo_wr_overflow axi_ad9361/adc_dovf
 
 # External TDD
 
-ad_ip_instance util_vector_logic logic_inv [list \
-  C_OPERATION {not} \
-  C_SIZE 1]
-
-ad_connect logic_inv/Op1  axi_ad9361/rst
-ad_connect logic_inv/Res  fe_fft/aresetn
+# isdbt v2b-3c: xfft のリセットは fe_win が出す（モード 0 の間は保持し、再開時に設定を送り直す）
+ad_connect fe_win/fft_aresetn fe_fft/aresetn
 # isdbt v2b-2c: TDD コアを外したので DMA の sync は常時 1
 ad_connect VCC axi_ad9361_adc_dma/sync
 ad_connect VCC axi_ad9361_dac_dma/sync
